@@ -1,0 +1,55 @@
+name: Marketing Intelligence Agent
+
+# Times are UTC. GitHub Actions cron always runs in UTC.
+on:
+  schedule:
+    # Daily scrape + analyze at 07:00 UTC
+    - cron: "0 7 * * *"
+    # Weekly brief every Monday at 08:00 UTC
+    - cron: "0 8 * * 1"
+  # Allow running by hand from the Actions tab
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "Run mode"
+        required: false
+        default: "daily"
+        type: choice
+        options:
+          - daily
+          - brief
+
+jobs:
+  run-agent:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Decide run mode
+        id: decide
+        run: |
+          # Monday 08:00 schedule -> brief. Manual "brief" -> brief. Everything else -> daily.
+          if [ "${{ github.event_name }}" = "schedule" ] && [ "${{ github.event.schedule }}" = "0 8 * * 1" ]; then
+            echo "args=--brief" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ github.event.inputs.mode }}" = "brief" ]; then
+            echo "args=--brief" >> "$GITHUB_OUTPUT"
+          else
+            echo "args=" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run marketing agent
+        env:
+          CLAUDE_API_KEY: ${{ secrets.CLAUDE_API_KEY }}
+          NOTION_API_KEY: ${{ secrets.NOTION_API_KEY }}
+          APIFY_API_KEY: ${{ secrets.APIFY_API_KEY }}
+          ASSEMBLYAI_API_KEY: ${{ secrets.ASSEMBLYAI_API_KEY }}
+        run: python marketing_agent.py ${{ steps.decide.outputs.args }}
